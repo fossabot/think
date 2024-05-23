@@ -15,8 +15,9 @@ declare(strict_types=1);
  */
 namespace littler\event;
 
+use littler\library\ParseClass;
 use think\App;
-use think\Route;
+use think\facade\Cache;
 
 class LoadModuleRoutes
 {
@@ -25,21 +26,68 @@ class LoadModuleRoutes
      */
     public function handle(): void
     {
-        $router = app(Route::class);
+        // Cache::tag(['class_list', 'routes_list'])->clear();
+
+        $app = app();
+        $class = new ParseClass();
+        $routes = (array) $class->getRoutes('all');
+        $router = $app->get('route');
         $domain = config('little.domain');
-        $paths = app(App::class)->make('moduleRoute')->get();
-        if ($domain) {
-            $router->domain($domain, function () use ($router, $paths) {
-                foreach ($paths as $path) {
-                    include $path;
-                }
-            });
-        } else {
-            $router->group(function () use ($router, $paths) {
-                foreach ($paths as $path) {
-                    include $path;
-                }
-            });
+        $rest = ['index', 'create', 'edit', 'read', 'save', 'update', 'delete'];
+        foreach ($routes as $item) {
+            if ($domain) {
+                $router->domain($domain, function () use ($router, $item, $rest) {
+                    $router->group($item['group'], function () use ($router, $item, $rest) {
+                        if ($item['auth']) {
+                            $router->resource($item['resource'], '\\' . $item['class'])->middleware($item['auth'])->except(['create', 'edit']);
+                        } else {
+                            $router->resource($item['resource'], '\\' . $item['class'])->except(['create', 'edit']);
+                        }
+                        foreach ($item['method'] as $route) {
+                            $way = str_replace(['/', '\\'], '', $route['route'][1] ?? '');
+                            $pos = strpos($way, ':');
+                            $method = $route['route'][0] ?? 'rule';
+                            $param = '';
+                            if ($pos) {
+                                $param = '/<' . substr($way, $pos + 1) . '>';
+                                $way = substr($way, 0, $pos);
+                            }
+                            if (! in_array($way, $rest)) {
+                                if (! $route['is_allow'] && $item['auth']) {
+                                    $router->{$method}($route['resource'] . $route['route'][1] ?? '' . $param, '\\' . $item['class'] . '@' . $way)->middleware($item['auth']);
+                                } else {
+                                    $router->{$method}($route['resource'] . $route['route'][1] ?? '' . $param, '\\' . $item['class'] . '@' . $way);
+                                }
+                            }
+                        }
+                    })->mergeRuleRegex();
+                });
+            } else {
+                $router->group($item['group'], function () use ($router, $item, $rest) {
+                    if ($item['auth']) {
+                        $router->resource($item['resource'], '\\' . $item['class'])->middleware($item['auth'])->except(['create', 'edit']);
+                    } else {
+                        $router->resource($item['resource'], '\\' . $item['class'])->except(['create', 'edit']);
+                    }
+                    foreach ($item['method'] as $route) {
+                        $way = str_replace(['/', '\\'], '', $route['route'][1] ?? '');
+                        $pos = strpos($way, ':');
+                        $method = $route['route'][0] ?? 'rule';
+                        $param = '';
+                        if ($pos) {
+                            $param = '/<' . substr($way, $pos + 1) . '>';
+                            $way = substr($way, 0, $pos);
+                        }
+                        if (! in_array($way, $rest)) {
+                            if (! $route['is_allow'] && $item['auth']) {
+                                $router->{$method}($route['resource'] . $route['route'][1] ?? '' . $param, '\\' . $item['class'] . '@' . $way)->middleware($item['auth']);
+                            } else {
+                                $router->{$method}($route['resource'] . $route['route'][1] ?? '' . $param, '\\' . $item['class'] . '@' . $way);
+                            }
+                        }
+                    }
+                })->mergeRuleRegex();
+            }
         }
     }
 }

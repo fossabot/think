@@ -62,6 +62,7 @@ abstract class ModuleService extends Service
     {
         $model[] = $this->loadModuleRoute();
         if (method_exists($this, 'loadModuleRoute') && ! is_null($this->loadModuleRoute())) {
+            // dd($this->loadModuleRoute());
             $this->app->make('moduleRoute')->loadModuleRoute($this->loadModuleRoute());
         }
     }
@@ -93,7 +94,15 @@ abstract class ModuleService extends Service
     protected function registerConfig()
     {
         if (method_exists($this, 'loadConfig') && ! is_null($this->loadConfig())) {
-            $this->app->config->set(array_merge($this->app->config->get('little'), $this->loadConfig()), 'little');
+            foreach ($this->app->config->get() as $config_key => $config_value) {
+                foreach ($this->loadConfig() as $key => $value) {
+                    if ($key == $config_key) {
+                        $this->app->config->set(array_merge($config_value, $value), $config_key);
+                    } else {
+                        $this->app->config->set($value, $key);
+                    }
+                }
+            }
         }
     }
 

@@ -32,7 +32,7 @@ class Auth
     protected $guard;
 
     // 默认获取
-    protected $username = 'username';
+    protected $account = 'account';
 
     // 校验字段
     protected $password = 'password';
@@ -76,10 +76,10 @@ class Auth
         if (! $user) {
             throw new LoginFailedException();
         }
-        if ($user->status == $user::DISABLE) {
-            throw new LoginFailedException('该用户已被禁用|' . $user->username ?? null, Code::USER_FORBIDDEN);
+        if ($user->status == $user::$disable) {
+            throw new LoginFailedException('该用户已被禁用|' . $user->account ?? null, Code::USER_FORBIDDEN);
         }
-        if ($this->checkPassword && ! password_verify($condition['password'] ?? 'no', $user->password)) {
+        if ($this->checkPassword && ! password_verify($condition['password'] ?? '', $user->password)) {
             throw new LoginFailedException('登录失败,密码错误');
         }
         return $this->{$this->getDriver()}($user);
@@ -94,8 +94,8 @@ class Auth
     public function user($token = null)
     {
         $user = $this->user[$this->guard] ?? null;
+        $token = $token ?? app()->get('jwt.token')->getToken();
         Jwt::verify($token);
-        $token = app()->get('jwt.token')->getToken();
         if (! $user) {
             switch ($this->getDriver()) {
                 case 'jwt':
@@ -136,9 +136,9 @@ class Auth
      * @param $field
      * @return $this
      */
-    public function username($field): self
+    public function account($field): self
     {
-        $this->username = $field;
+        $this->account = $field;
 
         return $this;
     }
@@ -175,7 +175,7 @@ class Auth
         unset($user->password);
         // dd($user->toArray());
         // Jwt::store($this->guard);
-        return Jwt::token($this->guard . '_' . $user->{$user->getAutoPk()}, $user->toArray())->toString();
+        return Jwt::token($user->{$user->getAutoPk()}, $user->toArray())->toString();
     }
 
     /**
@@ -213,6 +213,7 @@ class Auth
     protected function authenticate($condition)
     {
         $provider = $this->getProvider();
+        // return $this->{$provider['driver']};
         return $this->{$provider['driver']}($condition);
     }
 

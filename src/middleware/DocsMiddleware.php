@@ -13,23 +13,14 @@ declare(strict_types=1);
  * @license  https://github.com/littlezo/MozillaPublicLicense/blob/main/LICENSE
  *
  */
-namespace littler;
+namespace littler\middleware;
 
-class BaseRequest extends Request
+use think\Middleware;
+
+class DocsMiddleware extends Middleware
 {
-    /**
-     * 重写 post.
-     *
-     * @param string $name
-     * @param null $default
-     * @param string $filter
-     * @return null|array|mixed
-     */
-    public function post($name = '', $default = null, $filter = '')
+    public function handle()
     {
-        if ($this->needCreatorId) {
-        }
-
-        return parent::post($name, $default, $filter);
+        dd('docs');
     }
 }

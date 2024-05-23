@@ -23,6 +23,8 @@ use littler\generate\build\classes\Methods;
 use littler\generate\build\classes\Property;
 use littler\generate\build\classes\Traits;
 use littler\generate\build\classes\Uses;
+use littler\Utils;
+use think\facade\Db;
 use think\helper\Str;
 
 class Controller extends Factory
@@ -30,7 +32,7 @@ class Controller extends Factory
     protected $methods = [];
 
     protected $uses = [
-        'littler\BaseRequest as Request',
+        'littler\Request',
         'littler\Response',
         'littler\BaseController',
     ];
@@ -41,14 +43,18 @@ class Controller extends Factory
      */
     public function done(array $params)
     {
+        if (strpos($params['controller'], 'Has')) {
+            return false;
+        }
         // 写入成功之后
         $repositoryPath = $this->getGeneratePath($params['controller_repository']);
         $controllerPath = $this->getGeneratePath($params['controller']);
+        $this->getTraitsContent($params);
+        $this->getControllerContent($params);
         try {
             if (! FileSystem::put($repositoryPath, $this->getTraitsContent($params))) {
                 throw new FailedException($params['controller'] . ' generate failed~');
             }
-            // dd($this->getControllerContent($params));
             if (! file_exists($controllerPath)) {
                 FileSystem::put($controllerPath, $this->getControllerContent($params));
             }
@@ -70,9 +76,11 @@ class Controller extends Factory
             throw new FailedException('params has lost～');
         }
         [$className, $namespace] = $this->parseFilename($params['controller_repository']);
-
-        [$model, $modelNamespace] = $this->parseFilename($params['model']);
-        $asModel = ucfirst(Str::contains($model, 'Model') ? $model : $model . 'Model');
+        $is_use_model = $params['model'];
+        if ($is_use_model) {
+            [$model, $modelNamespace] = $this->parseFilename($params['model']);
+            $asModel = ucfirst(Str::contains($model, 'Model') ? $model : $model . 'Model');
+        }
 
         if (! $className) {
             throw new FailedException('未填写控制器名称');
@@ -82,7 +90,7 @@ class Controller extends Factory
         $class = new Classes($className, 'trait');
         // dd($class);
         return (new Build())->namespace($namespace)
-            ->use($use->name('littler\BaseRequest', 'Request'))
+            ->use($use->name('littler\Request'))
             ->use($use->name('littler\Response'))
             ->use($use->name($modelNamespace . '\\' . ucfirst($model), $asModel))
             ->class(
@@ -93,9 +101,8 @@ class Controller extends Factory
                     }
 
                     $class->addProperty(
-                        (new Property(lcfirst($model)))->protected()
+                        (new Property('model'))->protected()
                     );
-                    // dd($class);
                 }
             )
             ->getContent();
@@ -112,8 +119,6 @@ class Controller extends Factory
         if (! $params['controller']) {
             throw new FailedException('params has lost～');
         }
-
-        // parse controller
         [$className, $namespace] = $this->parseFilename($params['controller']);
 
         [$repository, $repositoryNamespace] = $this->parseFilename($params['controller_repository']);
@@ -124,12 +129,19 @@ class Controller extends Factory
 
         $use = new Uses();
         $class = new Classes($className);
-        // dd($class);
+        $_namespace = explode('\\', $namespace);
+        $_group = $_namespace[2] ?? '' . '/' . $_namespace[1] ?? '';
+        $_resource = str_replace('_', '/', Str::snake($className));
+        $table = Utils::tableWithPrefix($params['table']);
+        $database = config('database.connections.mysql.database');
+        $sql = sprintf("Select table_name %s ,TABLE_COMMENT from INFORMATION_SCHEMA.TABLES Where table_schema = '%s' AND table_name LIKE '%s'", $table, $database, $table);
+        $table_comment = Db::query($sql);
+        $title = $table_comment[0]['TABLE_COMMENT'] ?? $className;
         $date = date('Y年m月d日 H:i');
         return (new Build())->namespace($namespace)
             ->use($use->name($params['controller_repository']))
             ->use($use->name('littler\BaseController', 'Controller'))
-            ->use($use->name('littler\BaseRequest', 'Request'))
+            ->use($use->name('littler\Request'))
             ->use($use->name('littler\Response'))
             ->class(
                 $class->extend('Controller')
@@ -138,15 +150,16 @@ class Controller extends Factory
                         <<<TEXT
 
                             /**
-                             * {$className} 控制器
+                             * @title {$title}
                              * @time {$date}
+                             * @Group("{$_group}")
+                             * @Resource("{$_resource}")
                              * @version 1.0.0
                              */
 
                             TEXT
                     ),
                 function () {
-                    // dd($class);
                 }
             )
             ->getContent();
@@ -161,14 +174,14 @@ class Controller extends Factory
      */
     protected function getMethods($model, $asModel)
     {
-        $date = date('Y年m月d日 H:i');
+        $date = date('Y年m月d日 H:i:s');
         $model = lcfirst($model);
         return [
             (new Methods('__construct'))
                 ->public()
                 ->param($asModel, ucfirst($asModel))
                 ->docComment("\r\n")
-                ->declare($model, $asModel),
+                ->declare('model', $asModel),
 
             (new Methods('index'))->public()
                 ->param('request', 'Request')
@@ -176,13 +189,14 @@ class Controller extends Factory
                     <<<TEXT
 
                         /**
-                         * 列表
+                         * @title 列表
                          * @time {$date}
-                         * @param Request \$request
+                         * @var Request \$request
+                         * @Route(get, /index)
                          */
                         TEXT
                 )
-                ->returnType('\think\Response')->index($model),
+                ->returnType('\think\Response')->index('model'),
 
             (new Methods('save'))
                 ->public()
@@ -191,14 +205,15 @@ class Controller extends Factory
                     <<<TEXT
 
                         /**
-                         * 保存信息
+                         * @title 保存
                          * @time {$date}
-                         * @param Request \$request
+                         * @var Request \$request
+                         * @Route(post, /save)
                          */
                         TEXT
                 )
                 ->returnType('\think\Response')
-                ->save($model),
+                ->save('model'),
 
             (new Methods('read'))->public()
                 ->param('id')
@@ -206,13 +221,14 @@ class Controller extends Factory
                     <<<TEXT
 
                         /**
-                         * 读取
+                         * @title 读取
                          * @time {$date}
-                         * @param \$id
+                         * @Route(get, /read/:id)
+                         * @param int \$id
                          */
                         TEXT
                 )
-                ->returnType('\think\Response')->read($model),
+                ->returnType('\think\Response')->read('model'),
 
             (new Methods('update'))->public()
                 ->param('request', 'Request')
@@ -221,14 +237,14 @@ class Controller extends Factory
                     <<<TEXT
 
                         /**
-                         * 更新
+                         * @title 更新
                          * @time {$date}
-                         * @param Request \$request
-                         * @param \$id
+                         * @Route(put, /update/:id)
+                         * @param int \$id
                          */
                         TEXT
                 )
-                ->returnType('\think\Response')->update($model),
+                ->returnType('\think\Response')->update('model'),
 
             (new Methods('delete'))->public()
                 ->param('id')
@@ -236,13 +252,14 @@ class Controller extends Factory
                     <<<TEXT
 
                         /**
-                         * 删除
+                         * @title 删除
                          * @time {$date}
-                         * @param \$id
+                         * @Route(delete, /delete/:id)
+                         * @param int \$id
                          */
                         TEXT
                 )
-                ->returnType('\think\Response')->delete($model),
+                ->returnType('\think\Response')->delete('model'),
         ];
     }
 }

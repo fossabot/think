@@ -45,6 +45,7 @@ class Service extends \think\Service
         $this->registerLoadModule();
         $this->loadModuleRoute();
         $this->registerServices();
+        $this->registerEnabledModules();
     }
 
     protected function registerCommands(): void
@@ -91,6 +92,12 @@ class Service extends \think\Service
      */
     protected function registerQuery(): void
     {
+        // sprintf();
+        $timeRule = $this->app->config->get('database.time_query_rule');
+        $new_time_rule = [
+            'hour' => ['1 hour ago', 'now'],
+        ];
+
         $connections = $this->app->config->get('database.connections');
 
         // 支持多数据库配置注入 Query
@@ -101,6 +108,8 @@ class Service extends \think\Service
         $this->app->config->set([
             'connections' => $connections,
         ], 'database');
+        // 注入时间查询规则
+        $this->app->config->set(array_merge($timeRule, $new_time_rule), 'database.time_query_rule');
     }
 
     /**
@@ -108,7 +117,8 @@ class Service extends \think\Service
      */
     protected function registerProviders(): void
     {
-        $this->app->bind('request', Request::class);
+        // $this->app->bind('request', Request::class);
+        $this->app->bind('littlerApp', App::class);
     }
 
     /**
@@ -175,5 +185,19 @@ class Service extends \think\Service
                 return $this->path;
             }
         });
+    }
+
+    /**
+     * 注册模块服务
+     */
+    protected function registerEnabledModules()
+    {
+        $this->app->instance('enabledModules', new class() {
+            public function get()
+            {
+                return App::getEnabledModules();
+            }
+        });
+        // dd($this->app);
     }
 }

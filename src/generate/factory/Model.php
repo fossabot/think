@@ -58,6 +58,7 @@ class Model extends Factory
      */
     public function getRepositoryContent($params)
     {
+        $extra = $params['extra'];
         $table = Utils::tableWithPrefix($params['table']);
         [$modelName, $namespace] = $this->parseFilename($params['model_repository']);
         // 如果填写了表名并且没有填写模型名称 使用表名作为模型名称
@@ -68,18 +69,31 @@ class Model extends Factory
         if (! $modelName) {
             throw new FailedException('model name not set');
         }
+        $softDelete = $this->isSoftDelete($table) ?? $extra['soft_delete'];
+
         return (new Build())->namespace($namespace)
             ->use((new Uses())->name('littler\BaseModel', 'Model'))
             ->use((new Uses())->name(BaseOptionsTrait::class))
             ->use((new Uses())->name(RewriteTrait::class))
+            ->when($softDelete, function (Build $build) {
+                $build->use((new Uses())->name(SoftDelete::class));
+            })
             ->class(
                 (new Classes($modelName))
                     ->extend('Model')
                     ->abstract()
                     ->docComment($this->buildClassComment($table)),
-                function (Classes $class) use ($table) {
+                function (Classes $class) use ($table, $softDelete) {
                     $class->addTrait(
                         (new Traits())->use('BaseOptionsTrait', 'RewriteTrait')
+                    );
+                    $class->when(
+                        $softDelete,
+                        function () use ($class) {
+                            $class->addTrait(
+                                (new Traits())->use('SoftDelete')
+                            );
+                        }
                     );
                     // dd($class);
                     $class->addProperty(
@@ -90,9 +104,22 @@ class Model extends Factory
                     $class->when($this->hasTableExists($table), function ($class) use ($table) {
                         $class->addProperty(
                             (new Property('field'))->default(
+                                // dd(Db::getFields($table))
                                 (new Arr())->build(Db::getFields($table))
                             )->docComment('// 数据库字段映射')
                         );
+                    });
+                    $class->when($this->jsonField($table), function ($class) use ($table) {
+                        $class->addProperty(
+                            (new Property('json'))->default(
+                                $this->jsonField($table)
+                                // new Array_($items)
+                            )->docComment('// 设置json类型字段')
+                        );
+                        $class->addProperty(
+                            (new Property('jsonAssoc'))->default(true)->docComment('//  设置JSON数据返回数组')
+                        );
+                        // dd($this->jsonField($table));
                     });
                 }
             )->getContent();
@@ -106,7 +133,6 @@ class Model extends Factory
      */
     public function getContent($params)
     {
-        $extra = $params['extra'];
         $table = Utils::tableWithPrefix($params['table']);
         [$modelName, $namespace] = $this->parseFilename($params['model']);
         // 如果填写了表名并且没有填写模型名称 使用表名作为模型名称
@@ -117,26 +143,15 @@ class Model extends Factory
         if (! $modelName) {
             throw new FailedException('model name not set');
         }
-        $softDelete = $this->isSoftDelete($table) ?? $extra['soft_delete'];
         $repository = $params['model_repository'];
         [$repositoryName] = $this->parseFilename($repository);
         return (new Build())->namespace($namespace)
             ->use((new Uses())->name($repository))
-            ->when($softDelete, function (Build $build) {
-                $build->use((new Uses())->name(SoftDelete::class));
-            })
+
             ->class(
                 (new Classes($modelName))
                     ->extend($repositoryName),
-                function (Classes $class) use ($softDelete) {
-                    $class->when(
-                        $softDelete,
-                        function () use ($class) {
-                            $class->addTrait(
-                                (new Traits())->use('SoftDelete')
-                            );
-                        }
-                    );
+                function (Classes $class) {
                 }
             )->getContent();
     }
@@ -155,8 +170,27 @@ class Model extends Factory
                 continue;
             }
             $is_soft_delete = true;
+            // dd($is_soft_delete);
         }
         return $is_soft_delete;
+    }
+
+    /**
+     * json字段.
+     *
+     * @param $table
+     */
+    protected function jsonField($table)
+    {
+        $fields = Db::getFields($table);
+        $items = false;
+        foreach ($fields as $field => $item) {
+            // dd($type);
+            if ($item['type'] === 'json') {
+                $items[] = $field;
+            }
+        }
+        return $items;
     }
 
     /**
@@ -167,7 +201,7 @@ class Model extends Factory
     protected function buildClassComment($table): string
     {
         $fields = Db::name(Utils::tableWithoutPrefix($table))->getFieldsType();
-
+        // dd($fields);
         $comment = '/**' . PHP_EOL . ' *' . PHP_EOL;
 
         foreach ($fields as $field => $type) {

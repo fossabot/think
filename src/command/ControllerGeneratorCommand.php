@@ -17,7 +17,6 @@ namespace littler\command;
 
 use littler\App;
 use littler\generate\factory\Controller;
-use littler\generate\factory\Route;
 use littler\library\Composer;
 use think\console\Command;
 use think\console\Input;
@@ -40,50 +39,40 @@ class ControllerGeneratorCommand extends Command
             $output->error(sprintf('you must use [ composer require --dev %s]', self::RELY_PACKAGE));
             exit(0);
         }
-        $module = $output->ask($input, '请输入模块') ?? 'member';
+        $module = $output->ask($input, '请输入模块');
         if (! $module) {
             $output->error('请输入模块名');
             exit(0);
         }
         $module = strtolower($module);
         $layer = strtolower($output->ask($input, '请输入控制器层级 默认admin') ?? 'admin');
-        $controller = $output->ask($input, '请输入控制器名') ?? 'member';
+        $controller = $output->ask($input, '请输入控制器名');
         if (! $controller) {
             $output->error('请输入控制器名');
             exit(0);
         }
         $controller = ucfirst($controller);
-        $model = $output->ask($input, '请输入模型名') ?? 'member';
-        if (! $controller) {
-            $output->error('请输入模型名');
-            exit(0);
-        }
-        $model = ucfirst($model);
-        $notRoute = true;
-        $asn = $output->ask($input, '是否创建路由(Y/M) 默认N') ?? 'N';
-        if (strtolower($asn) == 'n') {
-            $notRoute = false;
+        $model = $output->ask($input, '请输入模型名') ?? '';
+        if ($model) {
+            // $output->error('请输入模型名');
+            // exit(0);
+            $model = ucfirst($model);
         }
         $params = [
             'controller' => 'little\\' . $module . '\\' . $layer . '\\controller\\' . $controller,
             'controller_repository' => 'little\\' . $module . '\\repository\\' . $layer . '\\' . $controller . 'Traits',
             'model' => 'little\\' . $module . '\\model\\' . $model,
             'extra' => [
-                'not_route' => $notRoute,
             ],
         ];
         if (! class_exists($params['model'])) {
-            $output->info(sprintf('模型类 %s 不存在！', $params['model']));
-            // exit(0);
+            $output->error(sprintf('模型 %s 不存在！', $params['model'] . '::class'));
+            exit(0);
         }
-        $controllerFile = App::getModuleDirectory($module, 'admin') . 'controller' . DIRECTORY_SEPARATOR . $model . '.php';
+        $controllerFile = App::getModuleDirectory($module, $layer) . 'controller' . DIRECTORY_SEPARATOR . $model . '.php';
         $repositoryFile = App::getModuleDirectory($module, 'repository') . $layer . DIRECTORY_SEPARATOR . $controller . 'Traits' . '.php';
 
         (new Controller())->done($params);
-        (new Route())->controller($params['controller'])
-            ->restful(true)
-            ->layer($layer)
-            ->done($params);
         if (file_exists($controllerFile)) {
             $output->info(sprintf('Controller %s Create Successfully!', $controllerFile));
         } else {
